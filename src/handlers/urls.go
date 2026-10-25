@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 )
 
 func RegisterRoutes() *http.ServeMux {
+	fmt.Println("Registering routes...")
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /", func(writer http.ResponseWriter, request *http.Request) {
@@ -15,6 +18,8 @@ func RegisterRoutes() *http.ServeMux {
 
 	mux.HandleFunc("DELETE /{id}", func(writer http.ResponseWriter, request *http.Request) {
 	})
+
+	fmt.Println("Routes registered.")
 
 	return mux
 }

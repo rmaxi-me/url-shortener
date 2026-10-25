@@ -38,16 +38,16 @@ updates:
 #      docker-dependencies:
 #        patterns:
 #          - "*"
-#
-#  - package-ecosystem: "docker-compose"
-#    directory: "/"
-#    schedule:
-#      interval: "daily"
-#      time: "09:00"
-#      timezone: "Europe/Paris"
-#    labels:
-#      - "dependencies"
-#    groups:
-#      docker-compose-dependencies:
-#        patterns:
-#          - "*"
+
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    labels:
+      - "dependencies"
+    groups:
+      docker-compose-dependencies:
+        patterns:
+          - "*"
