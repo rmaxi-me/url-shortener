@@ -1,0 +1,53 @@
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    labels:
+      - "dependencies"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+#  - package-ecosystem: "github-actions"
+#    directory: "/"
+#    schedule:
+#      interval: "daily"
+#      time: "09:00"
+#      timezone: "Europe/Paris"
+#    labels:
+#      - "dependencies"
+#    groups:
+#      github-actions-dependencies:
+#        patterns:
+#          - "*"
+
+#  - package-ecosystem: "docker"
+#    directory: "/"
+#    schedule:
+#      interval: "daily"
+#      time: "09:00"
+#      timezone: "Europe/Paris"
+#    labels:
+#      - "dependencies"
+#    groups:
+#      docker-dependencies:
+#        patterns:
+#          - "*"
+#
+#  - package-ecosystem: "docker-compose"
+#    directory: "/"
+#    schedule:
+#      interval: "daily"
+#      time: "09:00"
+#      timezone: "Europe/Paris"
+#    labels:
+#      - "dependencies"
+#    groups:
+#      docker-compose-dependencies:
+#        patterns:
+#          - "*"
