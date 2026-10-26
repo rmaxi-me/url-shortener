@@ -93,10 +93,46 @@ func (urlRouter *UrlRouter) VisitUrl(writer http.ResponseWriter, request *http.R
 		return
 	}
 
+	if shortUrl.DeletedAt.Valid {
+		src.WriteJSON(writer, http.StatusNotFound, map[string]any{
+			"error": "not found",
+		})
+		return
+	}
+
 	writer.Header().Set("Location", shortUrl.Target)
 	writer.WriteHeader(http.StatusTemporaryRedirect)
 }
 
 func (urlRouter *UrlRouter) DeleteUrl(writer http.ResponseWriter, request *http.Request) {
+	deleteKey := request.Header.Get("X-Delete-Key")
+	if deleteKey == "" {
+		src.WriteJSON(writer, http.StatusBadRequest, map[string]any{
+			"error": "bad request",
+		})
+		return
+	}
 
+	err := urlRouter.UrlUsecases.DeleteUrl(request.PathValue("id"), deleteKey)
+
+	if err != nil {
+		if errors.Is(err, models.ErrInvalidDeleteKey) {
+			src.WriteJSON(writer, http.StatusForbidden, map[string]any{
+				"error": "forbidden",
+			})
+			return
+		}
+		if errors.Is(err, models.ErrSourceNotFound) {
+			src.WriteJSON(writer, http.StatusNotFound, map[string]any{
+				"error": "not found",
+			})
+			return
+		}
+		src.WriteJSON(writer, http.StatusInternalServerError, map[string]any{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	writer.WriteHeader(http.StatusNoContent)
 }

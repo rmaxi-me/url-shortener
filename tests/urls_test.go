@@ -370,6 +370,39 @@ func TestResolve_Errors(t *testing.T) {
 	}
 }
 
+func TestResolve_AfterDelete(t *testing.T) {
+	tests := []struct {
+		name       string
+		deleteKey  string
+		wantStatus int
+	}{
+		{name: "deleted url", deleteKey: "secret", wantStatus: http.StatusNotFound},
+		{name: "failed delete keeps url", deleteKey: "wrong", wantStatus: http.StatusTemporaryRedirect},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newFakeStore()
+			store.seed("abc123", "https://example.com", "secret")
+			req := httptest.NewRequest(http.MethodDelete, "/abc123", nil)
+			req.Header.Set("X-Delete-Key", tt.deleteKey)
+			serve(store, req)
+
+			for range 2 {
+				rec := serve(store, httptest.NewRequest(http.MethodGet, "/abc123", nil))
+
+				assertStatus(t, rec, tt.wantStatus)
+				if tt.wantStatus == http.StatusNotFound {
+					assertJSONError(t, rec)
+					if loc := rec.Header().Get("Location"); loc != "" {
+						t.Errorf("Location = %q, want none", loc)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestResolve_UnroutablePaths(t *testing.T) {
 	tests := []struct {
 		name       string
