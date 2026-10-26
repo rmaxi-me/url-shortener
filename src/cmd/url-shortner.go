@@ -16,8 +16,6 @@ import (
 )
 
 func initDb() (*gorm.DB, error) {
-	fmt.Println("Initializing database...")
-
 	dsn := fmt.Sprintf(
 		"host=%v user=%v password=%v dbname=%v port=%v sslmode=disable",
 		config.PostgresIp,
@@ -57,8 +55,6 @@ func main() {
 		WriteTimeout:      1 * time.Second,
 		IdleTimeout:       30 * time.Second,
 	}
-
-	fmt.Println("Starting to listen for requests!")
 
 	err = srv.ListenAndServe()
 	if err != nil {

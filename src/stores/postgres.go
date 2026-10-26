@@ -30,23 +30,14 @@ func (postgres *PostgresStore) Create(ctx context.Context, shortUrl *models.Shor
 	return shortUrl, err
 }
 
-func (postgres *PostgresStore) Resolve(ctx context.Context, source string, incrementServe bool) (*models.ShortUrl, error) {
-	var result *gorm.DB
+func (postgres *PostgresStore) Resolve(ctx context.Context, source string) (*models.ShortUrl, error) {
 	var shortUrl models.ShortUrl
 
-	if incrementServe {
-		result = postgres.db.WithContext(ctx).
-			Model(&shortUrl).
-			Clauses(clause.Returning{}).
-			Where("source = ?", source).
-			Update("serve_count", gorm.Expr("serve_count + 1"))
-	} else {
-		result = postgres.db.WithContext(ctx).
-			Model(&shortUrl).
-			Clauses(clause.Returning{}).
-			Where("source = ?", source).
-			First(&shortUrl)
-	}
+	result := postgres.db.WithContext(ctx).
+		Model(&shortUrl).
+		Clauses(clause.Returning{}).
+		Where("source = ?", source).
+		Update("serve_count", gorm.Expr("serve_count + 1"))
 
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return nil, models.ErrSourceNotFound

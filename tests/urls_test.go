@@ -61,7 +61,7 @@ func (f *fakeStore) GetIdLength() int {
 	return f.idLength
 }
 
-func (f *fakeStore) Resolve(ctx context.Context, source string, incrementServe bool) (*models.ShortUrl, error) {
+func (f *fakeStore) Resolve(ctx context.Context, source string) (*models.ShortUrl, error) {
 	f.resolveCalls++
 	if f.resolveErr != nil {
 		return nil, fmt.Errorf("fake store: %w", f.resolveErr)
