@@ -59,6 +59,6 @@ func (urlUsecases *UrlUsecases) ResolveId(source string) (*models.ShortUrl, erro
 	return urlUsecases.UrlStore.Resolve(context.Background(), source)
 }
 
-func (urlUsecases *UrlUsecases) DeleteUrl(shortUrl models.ShortUrl) {
-
+func (urlUsecases *UrlUsecases) DeleteUrl(source, deleteKey string) error {
+	return urlUsecases.UrlStore.Delete(context.Background(), source, deleteKey)
 }

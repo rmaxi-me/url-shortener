@@ -24,7 +24,7 @@ func initDb() (*gorm.DB, error) {
 		config.PostgresDb,
 		config.PostgresPort,
 	)
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	return gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true})
 }
 
 func main() {
