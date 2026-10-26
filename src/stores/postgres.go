@@ -39,11 +39,11 @@ func (postgres *PostgresStore) Resolve(ctx context.Context, source string) (*mod
 		Where("source = ?", source).
 		Update("serve_count", gorm.Expr("serve_count + 1"))
 
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return nil, models.ErrSourceNotFound
-	}
 	if result.Error != nil {
 		return nil, fmt.Errorf("resolve url: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, models.ErrSourceNotFound
 	}
 	return &shortUrl, nil
 }
