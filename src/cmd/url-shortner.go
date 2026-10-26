@@ -38,7 +38,12 @@ func main() {
 	fmt.Println("=== URL Shortener server ===")
 
 	db := initDb()
-	defer db.Close(context.Background())
+	defer func(db *pgx.Conn, ctx context.Context) {
+		err := db.Close(ctx)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Failed to close the database connection: %v\n", err)
+		}
+	}(db, context.Background())
 
 	mux := handlers.RegisterRoutes()
 	srv := &http.Server{
