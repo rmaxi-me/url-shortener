@@ -1,4 +1,4 @@
-package handlers_test
+package tests_test
 
 import (
 	"context"
@@ -10,61 +10,69 @@ import (
 	"net/http/httptest"
 	"rmaxi-me/url-shortner/src/handlers"
 	"rmaxi-me/url-shortner/src/models"
+	"rmaxi-me/url-shortner/src/stores"
 	"strings"
 	"testing"
 )
 
 type fakeStore struct {
-	urls map[string]*models.ShortUrl
+	urls     map[string]*models.ShortUrl
+	idLength int
 
-	createErr  error
+	createErr error
+	// collisions is how many Create calls fail with ErrSourceAlreadyExists
+	// before one succeeds.
+	collisions int
 	resolveErr error
 	deleteErr  error
 
-	createdTargets []string
-	resolveCalls   int
-	deleteCalls    int
+	createCalls  []models.ShortUrl
+	resolveCalls int
+	deleteCalls  int
 }
 
-var _ handlers.Store = (*fakeStore)(nil)
+var _ stores.Store = (*fakeStore)(nil)
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{urls: map[string]*models.ShortUrl{}}
+	return &fakeStore{urls: map[string]*models.ShortUrl{}, idLength: 8}
 }
 
 func (f *fakeStore) seed(source, target, deleteKey string) {
 	f.urls[source] = &models.ShortUrl{Source: source, Target: target, DeleteKey: deleteKey}
 }
 
-func (f *fakeStore) Create(_ context.Context, target string) (models.ShortUrl, error) {
-	f.createdTargets = append(f.createdTargets, target)
+func (f *fakeStore) Create(_ context.Context, shortUrl *models.ShortUrl) (*models.ShortUrl, error) {
+	f.createCalls = append(f.createCalls, *shortUrl)
 	if f.createErr != nil {
-		return models.ShortUrl{}, fmt.Errorf("fake store: %w", f.createErr)
+		return nil, fmt.Errorf("fake store: %w", f.createErr)
 	}
 
-	n := len(f.urls) + 1
-	url := &models.ShortUrl{
-		ID:        int64(n),
-		Source:    fmt.Sprintf("id%d", n),
-		Target:    target,
-		DeleteKey: fmt.Sprintf("key%d", n),
+	if _, exists := f.urls[shortUrl.Source]; exists || len(f.createCalls) <= f.collisions {
+		return nil, fmt.Errorf("fake store: %w", models.ErrSourceAlreadyExists)
 	}
-	f.urls[url.Source] = url
-	return *url, nil
+
+	stored := *shortUrl
+	stored.ID = uint(len(f.urls) + 1)
+	f.urls[stored.Source] = &stored
+	return &stored, nil
 }
 
-func (f *fakeStore) Resolve(_ context.Context, source string) (string, error) {
+func (f *fakeStore) GetIdLength() int {
+	return f.idLength
+}
+
+func (f *fakeStore) Resolve(ctx context.Context, source string, incrementServe bool) (*models.ShortUrl, error) {
 	f.resolveCalls++
 	if f.resolveErr != nil {
-		return "", fmt.Errorf("fake store: %w", f.resolveErr)
+		return nil, fmt.Errorf("fake store: %w", f.resolveErr)
 	}
 
 	url, ok := f.urls[source]
 	if !ok {
-		return "", fmt.Errorf("fake store: %w", models.ErrSourceNotFound)
+		return nil, fmt.Errorf("fake store: %w", models.ErrSourceNotFound)
 	}
 	url.ServeCount++
-	return url.Target, nil
+	return url, nil
 }
 
 func (f *fakeStore) Delete(_ context.Context, source, deleteKey string) error {
@@ -84,7 +92,7 @@ func (f *fakeStore) Delete(_ context.Context, source, deleteKey string) error {
 	return nil
 }
 
-func serve(store handlers.Store, req *http.Request) *httptest.ResponseRecorder {
+func serve(store stores.Store, req *http.Request) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	handlers.RegisterRoutes(store).ServeHTTP(rec, req)
 	return rec
@@ -162,21 +170,68 @@ func TestCreate_Success(t *testing.T) {
 				t.Fatalf("response is not valid JSON: %v", err)
 			}
 
-			stored, ok := store.urls[resp.ID]
-			if !ok {
-				t.Fatalf("response id %q does not match any stored url", resp.ID)
+			if len(store.createCalls) != 1 {
+				t.Fatalf("store.Create called %d times, want 1", len(store.createCalls))
 			}
-			if resp.DeleteKey != stored.DeleteKey {
-				t.Errorf("delete_key = %q, want %q", resp.DeleteKey, stored.DeleteKey)
+			if got := store.createCalls[0].Target; got != tt.url {
+				t.Errorf("store.Create target = %q, want %q", got, tt.url)
 			}
-			if got, want := rec.Header().Get("Location"), "/"+resp.ID; got != want {
-				t.Errorf("Location = %q, want %q", got, want)
-			}
-			if len(store.createdTargets) != 1 || store.createdTargets[0] != tt.url {
-				t.Errorf("store.Create targets = %q, want [%q]", store.createdTargets, tt.url)
-			}
+			assertStoredMatchesResponse(t, store, rec, resp)
 		})
 	}
+}
+
+func TestCreate_RetriesOnCollision(t *testing.T) {
+	store := newFakeStore()
+	store.collisions = 2
+
+	rec := serve(store, newCreateRequest("application/json", `{"url":"https://example.com"}`))
+
+	assertStatus(t, rec, http.StatusCreated)
+
+	var resp createResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+
+	if len(store.createCalls) != 3 {
+		t.Fatalf("store.Create called %d times, want 3", len(store.createCalls))
+	}
+	sources := map[string]bool{}
+	for _, call := range store.createCalls {
+		sources[call.Source] = true
+	}
+	if len(sources) != 3 {
+		t.Errorf("retries reused an id: attempted sources %v, want 3 distinct", sources)
+	}
+	if last := store.createCalls[2].Source; resp.ID != last {
+		t.Errorf("response id = %q, want the id of the successful attempt %q", resp.ID, last)
+	}
+	assertStoredMatchesResponse(t, store, rec, resp)
+}
+
+// assertStoredMatchesResponse checks that the id and delete key the client
+// received are the ones that were generated and persisted.
+func assertStoredMatchesResponse(t *testing.T, store *fakeStore, rec *httptest.ResponseRecorder, resp createResponse) {
+	t.Helper()
+
+	if len(resp.ID) != store.idLength || !isLowerHex(resp.ID) {
+		t.Errorf("id = %q, want a %d character lowercase hex string", resp.ID, store.idLength)
+	}
+	stored, ok := store.urls[resp.ID]
+	if !ok {
+		t.Fatalf("response id %q does not match any stored url", resp.ID)
+	}
+	if resp.DeleteKey == "" || resp.DeleteKey != stored.DeleteKey {
+		t.Errorf("delete_key = %q, want the stored key %q", resp.DeleteKey, stored.DeleteKey)
+	}
+	if got, want := rec.Header().Get("Location"), "/"+resp.ID; got != want {
+		t.Errorf("Location = %q, want %q", got, want)
+	}
+}
+
+func isLowerHex(s string) bool {
+	return strings.Trim(s, "0123456789abcdef") == ""
 }
 
 func TestCreate_InvalidRequest(t *testing.T) {
@@ -211,8 +266,8 @@ func TestCreate_InvalidRequest(t *testing.T) {
 
 			assertStatus(t, rec, tt.wantStatus)
 			assertJSONError(t, rec)
-			if len(store.createdTargets) != 0 {
-				t.Errorf("store.Create was called with %q, want no call", store.createdTargets)
+			if len(store.createCalls) != 0 {
+				t.Errorf("store.Create called %d times, want 0", len(store.createCalls))
 			}
 		})
 	}
@@ -220,11 +275,12 @@ func TestCreate_InvalidRequest(t *testing.T) {
 
 func TestCreate_StoreError(t *testing.T) {
 	tests := []struct {
-		name string
-		err  error
+		name      string
+		err       error
+		wantRetry bool
 	}{
-		{name: "collision retries exhausted", err: models.ErrSourceAlreadyExists},
-		{name: "unexpected error", err: errors.New("connection refused")},
+		{name: "collision retries exhausted", err: models.ErrSourceAlreadyExists, wantRetry: true},
+		{name: "unexpected error", err: errors.New("connection refused"), wantRetry: false},
 	}
 
 	for _, tt := range tests {
@@ -236,6 +292,9 @@ func TestCreate_StoreError(t *testing.T) {
 
 			assertStatus(t, rec, http.StatusInternalServerError)
 			assertJSONError(t, rec)
+			if retried := len(store.createCalls) > 1; retried != tt.wantRetry {
+				t.Errorf("store.Create called %d times, want retry = %v", len(store.createCalls), tt.wantRetry)
+			}
 		})
 	}
 }
@@ -248,8 +307,8 @@ func TestCreate_OnlyMatchesRoot(t *testing.T) {
 	rec := serve(store, req)
 
 	assertStatus(t, rec, http.StatusMethodNotAllowed)
-	if len(store.createdTargets) != 0 {
-		t.Errorf("store.Create was called with %q, want no call", store.createdTargets)
+	if len(store.createCalls) != 0 {
+		t.Errorf("store.Create called %d times, want 0", len(store.createCalls))
 	}
 }
 
