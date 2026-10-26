@@ -55,8 +55,8 @@ func (urlUsecases *UrlUsecases) CreateUrl(target string) (*models.ShortUrl, erro
 	return nil, models.ErrSourceAlreadyExists
 }
 
-func (urlUsecases *UrlUsecases) ResolveId(source string, incrementServe bool) (*models.ShortUrl, error) {
-	return urlUsecases.UrlStore.Resolve(context.Background(), source, incrementServe)
+func (urlUsecases *UrlUsecases) ResolveId(source string) (*models.ShortUrl, error) {
+	return urlUsecases.UrlStore.Resolve(context.Background(), source)
 }
 
 func (urlUsecases *UrlUsecases) DeleteUrl(shortUrl models.ShortUrl) {

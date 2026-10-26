@@ -61,7 +61,7 @@ func (f *fakeStore) GetIdLength() int {
 	return f.idLength
 }
 
-func (f *fakeStore) Resolve(ctx context.Context, source string, incrementServe bool) (*models.ShortUrl, error) {
+func (f *fakeStore) Resolve(ctx context.Context, source string) (*models.ShortUrl, error) {
 	f.resolveCalls++
 	if f.resolveErr != nil {
 		return nil, fmt.Errorf("fake store: %w", f.resolveErr)
@@ -333,24 +333,67 @@ func TestResolve_Success(t *testing.T) {
 func TestResolve_Errors(t *testing.T) {
 	tests := []struct {
 		name       string
+		path       string
 		storeErr   error
 		wantStatus int
 	}{
-		{name: "unknown id", storeErr: nil, wantStatus: http.StatusNotFound},
-		{name: "unexpected store error", storeErr: errors.New("connection refused"), wantStatus: http.StatusInternalServerError},
+		{name: "unknown id", path: "/deadbeef", wantStatus: http.StatusNotFound},
+		{name: "non hex id", path: "/zzzzzzzz", wantStatus: http.StatusNotFound},
+		{name: "id too short", path: "/abc", wantStatus: http.StatusNotFound},
+		{name: "prefix of existing id", path: "/abc12", wantStatus: http.StatusNotFound},
+		{name: "existing id with extra char", path: "/abc1234", wantStatus: http.StatusNotFound},
+		{name: "existing id in uppercase", path: "/ABC123", wantStatus: http.StatusNotFound},
+		{name: "very long id", path: "/" + strings.Repeat("a", 4096), wantStatus: http.StatusNotFound},
+		{name: "encoded slash in id", path: "/abc%2F123", wantStatus: http.StatusNotFound},
+		{name: "encoded null byte in id", path: "/abc123%00", wantStatus: http.StatusNotFound},
+		{name: "sql injection in id", path: "/abc123'%20OR%20'1'='1", wantStatus: http.StatusNotFound},
+		{name: "unexpected store error", path: "/abc123", storeErr: errors.New("connection refused"), wantStatus: http.StatusInternalServerError},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := newFakeStore()
+			store.seed("abc123", "https://example.com", "secret")
 			store.resolveErr = tt.storeErr
 
-			rec := serve(store, httptest.NewRequest(http.MethodGet, "/unknown", nil))
+			rec := serve(store, httptest.NewRequest(http.MethodGet, tt.path, nil))
 
 			assertStatus(t, rec, tt.wantStatus)
 			assertJSONError(t, rec)
 			if loc := rec.Header().Get("Location"); loc != "" {
 				t.Errorf("Location = %q, want none", loc)
+			}
+			if got := store.urls["abc123"].ServeCount; got != 0 {
+				t.Errorf("serve count of an unrelated url = %d, want 0", got)
+			}
+		})
+	}
+}
+
+func TestResolve_UnroutablePaths(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		wantStatus int
+	}{
+		{name: "root", path: "/", wantStatus: http.StatusMethodNotAllowed},
+		{name: "trailing slash", path: "/abc123/", wantStatus: http.StatusNotFound},
+		{name: "nested path", path: "/abc123/extra", wantStatus: http.StatusNotFound},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newFakeStore()
+			store.seed("abc123", "https://example.com", "secret")
+
+			rec := serve(store, httptest.NewRequest(http.MethodGet, tt.path, nil))
+
+			assertStatus(t, rec, tt.wantStatus)
+			if loc := rec.Header().Get("Location"); loc != "" {
+				t.Errorf("Location = %q, want none", loc)
+			}
+			if store.resolveCalls != 0 {
+				t.Errorf("store.Resolve called %d times, want 0", store.resolveCalls)
 			}
 		})
 	}

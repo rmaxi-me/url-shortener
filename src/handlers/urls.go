@@ -79,7 +79,22 @@ func (urlRouter *UrlRouter) CreateUrl(writer http.ResponseWriter, request *http.
 }
 
 func (urlRouter *UrlRouter) VisitUrl(writer http.ResponseWriter, request *http.Request) {
+	shortUrl, err := urlRouter.UrlUsecases.ResolveId(request.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, models.ErrSourceNotFound) {
+			src.WriteJSON(writer, http.StatusNotFound, map[string]any{
+				"error": "not found",
+			})
+			return
+		}
+		src.WriteJSON(writer, http.StatusInternalServerError, map[string]any{
+			"error": "internal server error",
+		})
+		return
+	}
 
+	writer.Header().Set("Location", shortUrl.Target)
+	writer.WriteHeader(http.StatusTemporaryRedirect)
 }
 
 func (urlRouter *UrlRouter) DeleteUrl(writer http.ResponseWriter, request *http.Request) {
