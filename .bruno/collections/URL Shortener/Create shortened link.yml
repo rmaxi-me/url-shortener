@@ -1,0 +1,41 @@
+info:
+  name: Create shortened link
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/"
+  body:
+    type: json
+    data: |-
+      {
+        "url": "{{?target_url}}"
+      }
+  auth: inherit
+
+runtime:
+  actions:
+    - type: set-variable
+      phase: after-response
+      selector:
+        expression: res.body.id
+        method: jsonq
+      variable:
+        name: url_id
+        scope: runtime
+    - type: set-variable
+      phase: after-response
+      selector:
+        expression: res.body.delete_key
+        method: jsonq
+      variable:
+        name: delete_key
+        scope: runtime
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
